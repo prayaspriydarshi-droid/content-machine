@@ -1,0 +1,59 @@
+name: YouTube Automation Bot
+
+on:
+  schedule:
+    # Runs every day at 14:00 UTC (adjust to your best US posting time)
+    - cron: "0 14 * * *"
+  workflow_dispatch: {}   # lets you trigger manually from the Actions tab
+
+jobs:
+  create-and-upload-video:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies (for MoviePy)
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run feedback loop (score yesterday's upload, if any)
+        env:
+          YT_TOKEN_JSON: ${{ secrets.YT_TOKEN_JSON }}
+        run: python scripts/feedback_loop.py
+        continue-on-error: true
+
+      - name: Pick today's topic
+        run: python scripts/topic_research.py
+
+      - name: Generate script
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python scripts/script_writer.py
+
+      - name: Generate voiceover
+        run: python scripts/voiceover.py
+
+      - name: Build video
+        env:
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: python scripts/video_builder.py
+
+      - name: Upload to YouTube
+        env:
+          YT_TOKEN_JSON: ${{ secrets.YT_TOKEN_JSON }}
+        run: python scripts/uploader.py
+
+      - name: Commit updated data files back to repo
+        run: |
+          git config user.name "yt-automation-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/
+          git commit -m "Update bot data [skip ci]" || echo "Nothing to commit"
+          git push
